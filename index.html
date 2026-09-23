@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SPACE SHOOTER</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game-shell">
+    <section id="start-screen" class="screen">
+      <div class="panel">
+        <div class="eyebrow">FEIRA DE CIÊNCIAS</div>
+        <h1>SPACE SHOOTER</h1>
+        <p>Defenda a galáxia e sobreviva à campanha completa de 13 etapas.</p>
+        <label for="player-name">Digite seu nome:</label>
+        <input id="player-name" type="text" maxlength="18" autocomplete="off" placeholder="Seu nome">
+        <button id="start-button">JOGAR</button>
+        <button id="ranking-button" class="secondary-button">🏆 RANKING</button>
+        <button id="test-phases-button" class="test-button">🧪 TESTAR FASES</button>
+        <p id="start-message" class="message"></p>
+      </div>
+    </section>
+
+    <section id="test-screen" class="screen hidden">
+      <div class="panel test-panel">
+        <div class="eyebrow">MODO DE TESTE</div>
+        <h2>🧪 TESTAR FASES</h2>
+        <p>Escolha diretamente a fase que você quer testar. O modo de teste não salva pontuação no ranking.</p>
+        <div id="test-phase-list" class="test-phase-list"></div>
+        <button id="test-back-button" class="secondary-button">VOLTAR</button>
+      </div>
+    </section>
+
+    <section id="ranking-screen" class="screen hidden">
+      <div class="panel ranking-panel">
+        <div class="eyebrow">PLACAR ONLINE</div>
+        <h2>🏆 RANKING</h2>
+        <p class="ranking-status" id="ranking-status">Atualizando...</p>
+        <div class="ranking-box">
+          <ol id="ranking-list"></ol>
+        </div>
+        <button id="ranking-back-button">VOLTAR</button>
+      </div>
+    </section>
+
+    <section id="game-screen" class="hidden">
+      <header class="hud">
+        <div>JOGADOR: <span id="hud-player">---</span></div>
+        <div>FASE: <span id="hud-phase">1</span></div>
+        <div>PONTOS: <span id="hud-score">0000</span></div>
+        <div>VIDAS: <span id="hud-lives">❤️ ❤️ ❤️</span></div>
+      </header>
+
+      <div class="canvas-wrap">
+        <canvas id="game-canvas" width="500" height="600"></canvas>
+        <div class="mobile-hint" aria-hidden="true">👆 Arraste para mover • Segure para atirar</div>
+
+        <div id="phase-overlay" class="overlay hidden">
+          <div class="overlay-card" id="phase-card">
+            <h2 id="phase-title"></h2>
+            <p id="phase-subtitle"></p>
+            <button id="continue-button">CONTINUAR</button>
+          </div>
+        </div>
+
+        <div id="quiz-overlay" class="overlay hidden">
+          <div class="overlay-card quiz-card">
+            <div class="quiz-badge">🧠 DESAFIO ESPACIAL</div>
+            <h2 id="quiz-title">QUIZ DA FASE</h2>
+            <p id="quiz-instruction">Responda as 3 questões para ganhar um poder.</p>
+            <div id="quiz-questions"></div>
+            <p id="quiz-result" class="quiz-result"></p>
+            <button id="quiz-submit-button">RESPONDER</button>
+          </div>
+        </div>
+
+        <div id="power-overlay" class="overlay hidden">
+          <div class="overlay-card power-card">
+            <div class="quiz-badge">⚡ RECOMPENSA</div>
+            <h2>ESCOLHA SEU PODER</h2>
+            <p id="power-instruction">Você acertou as 3 questões. Escolha uma habilidade:</p>
+            <div id="power-options" class="power-options"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="end-screen" class="screen hidden">
+      <div class="panel final-panel">
+        <h2 id="end-title">GAME OVER</h2>
+        <p id="end-player"></p>
+        <p id="end-score"></p>
+        <div class="final-rank">
+          <span>SUA POSIÇÃO NO RANKING</span>
+          <strong id="end-rank">#--</strong>
+        </div>
+        <button id="restart-button">JOGAR NOVAMENTE</button>
+        <button id="end-ranking-button" class="secondary-button">🏆 VER RANKING</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Firebase compatível com os scripts tradicionais do projeto. -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCGMRB8fcUcWr7N5X65MZixC7rXGGwY89o",
+      authDomain: "space-6ce47.firebaseapp.com",
+      projectId: "space-6ce47",
+      storageBucket: "space-6ce47.firebasestorage.app",
+      messagingSenderId: "108589047716",
+      appId: "1:108589047716:web:8780bf3944beca58146b31",
+      measurementId: "G-FY5DGF73CE"
+    };
+    firebase.initializeApp(firebaseConfig);
+  </script>
+
+  <script src="js/ranking.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/enemies.js"></script>
+  <script src="js/boss.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/fase1.js"></script>
+  <script src="js/fase2.js"></script>
+  <script src="js/fase3.js"></script>
+  <script src="js/fase4.js"></script>
+  <script src="js/fase5.js"></script>
+  <script src="js/fase6.js"></script>
+  <script src="js/fase7.js"></script>
+  <script src="js/fase8.js"></script>
+  <script src="js/fase9.js"></script>
+  <script src="js/fase10.js"></script>
+  <script src="js/fase11.js"></script>
+  <script src="js/fase12.js"></script>
+  <script src="js/fase13.js"></script>
+</body>
+</html>
