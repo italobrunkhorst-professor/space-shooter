@@ -202,13 +202,28 @@ class Enemy {
       // Mantém a proporção original do sprite para evitar que naves
       // verticais (RÁPIDO/ELITE) sejam deformadas ou pareçam cortadas.
       const boxW = this.width + 10;
-      const boxH = this.height + 12;
-      const scale = Math.min(boxW / sprite.naturalWidth, boxH / sprite.naturalHeight);
-      const drawW = sprite.naturalWidth * scale;
-      const drawH = sprite.naturalHeight * scale;
-      const drawX = this.x + this.width / 2 - drawW / 2;
-      const drawY = this.y + this.height / 2 - drawH / 2;
-      ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
+const boxH = this.height + 12;
+
+let drawW;
+let drawH;
+
+if (this.type === "NORMAL") {
+    drawW = 90;
+    drawH = 62;
+} else {
+    const scale = Math.min(
+        boxW / sprite.naturalWidth,
+        boxH / sprite.naturalHeight
+    );
+
+    drawW = sprite.naturalWidth * scale;
+    drawH = sprite.naturalHeight * scale;
+}
+
+const drawX = this.x + this.width / 2 - drawW / 2;
+const drawY = this.y + this.height / 2 - drawH / 2;
+
+ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
       ctx.restore();
     }
 
