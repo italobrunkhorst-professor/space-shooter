@@ -1,0 +1,629 @@
+const bossSprites = {
+  MINI_BOSS: new Image(),
+  BOSS: new Image(),
+  BOSS_FINAL: new Image(),
+  ALIEN_SUPREMO: new Image(),
+  ALIEN_PHASE1: new Image(),
+  ALIEN_PHASE2: new Image(),
+  ALIEN_PHASE3: new Image()
+};
+bossSprites.MINI_BOSS.src = "assets/sprites/boss-mini.png";
+bossSprites.BOSS.src = "assets/sprites/boss-final.png";
+bossSprites.BOSS_FINAL.src = "assets/sprites/boss-final.png";
+bossSprites.ALIEN_PHASE1.src = "assets/sprites/boss-alien-phase1.png";
+bossSprites.ALIEN_PHASE2.src = "assets/sprites/boss-alien-phase2.png";
+bossSprites.ALIEN_PHASE3.src = "assets/sprites/boss-alien-phase3.png";
+// Referência visual enviada para o Alien Supremo (mantida como asset para testes futuros).
+const alienSupremoReference = new Image();
+alienSupremoReference.src = "assets/sprites/boss-alien-supremo-reference.png";
+
+/* boss.js
+   Controla o Mini Boss, Boss 2 e o Boss Final.
+   O Boss Final possui visual próprio, 3 fases de ataque e um ataque especial
+   de telegráfico + raio vertical para tornar a luta mais dinâmica e legível.
+*/
+
+class Boss {
+  constructor(type, canvas, options = {}) {
+    this.type = type;
+    this.canvas = canvas;
+    this.maxHp = type === "MINI_BOSS" ? 250 : (options.maxHp ?? (type === "ALIEN_SUPREMO" ? 1000 : 500));
+    this.hp = this.maxHp;
+    this.width = type === "MINI_BOSS" ? 150 : (type === "BOSS_FINAL" ? 226 : (type === "ALIEN_SUPREMO" ? 250 : 210));
+    this.height = type === "MINI_BOSS" ? 82 : (type === "BOSS_FINAL" ? 126 : (type === "ALIEN_SUPREMO" ? 190 : 112));
+    this.x = canvas.width / 2 - this.width / 2;
+    this.y = (type === "BOSS_FINAL" || type === "ALIEN_SUPREMO") ? 48 : 78;
+    this.direction = 1;
+    this.speed = type === "MINI_BOSS" ? 1.15 : (type === "BOSS_FINAL" ? 1.05 : (type === "ALIEN_SUPREMO" ? .72 : .85));
+    this.shotTimer = type === "MINI_BOSS" ? 70 : 58;
+    this.patternTimer = 0;
+    this.flash = 0;
+    this.unlocked = false;
+    this.defeated = false;
+
+    // Estado exclusivo dos Bosses especiais.
+    this.finalPhase = 1;
+    this.alienPhase = 1;
+    this.alienAttackIndex = 0;
+    this.alienSpecialCooldown = 180;
+    this.alienWarning = 0;
+    this.alienSpecialX = canvas.width / 2;
+    this.alienSpecialActive = 0;
+    this.specialCooldown = 210;
+    this.specialWarning = 0;
+    this.specialX = canvas.width / 2;
+    this.specialActive = 0;
+    this.pulse = 0;
+    this.attackIndex = 0;
+  }
+
+  update(frame, enemyBullets, player) {
+    if (this.defeated) return;
+
+    this.patternTimer++;
+    this.pulse += 0.08;
+
+    if (this.type === "BOSS_FINAL") {
+      this.updateFinalBoss(frame, enemyBullets, player);
+      return;
+    }
+    if (this.type === "ALIEN_SUPREMO") {
+      this.updateAlienSupremo(frame, enemyBullets, player);
+      return;
+    }
+
+    this.x += this.speed * this.direction;
+    if (this.x <= 20 || this.x + this.width >= this.canvas.width - 20) {
+      this.direction *= -1;
+      this.x = Math.max(20, Math.min(this.canvas.width - this.width - 20, this.x));
+    }
+
+    if (!this.unlocked || this.defeated) return;
+    this.shotTimer--;
+    if (this.shotTimer <= 0) {
+      this.firePattern(enemyBullets, player);
+      this.shotTimer = this.type === "MINI_BOSS" ? 72 : 58;
+    }
+  }
+
+  updateAlienSupremo(frame, enemyBullets, player) {
+    const ratio = this.hp / this.maxHp;
+    const oldPhase = this.alienPhase;
+    if (ratio > 2 / 3) this.alienPhase = 1;
+    else if (ratio > 1 / 3) this.alienPhase = 2;
+    else this.alienPhase = 3;
+
+    const speeds = [0.72, 0.95, 1.18];
+    this.x += speeds[this.alienPhase - 1] * this.direction;
+    if (this.x <= 8 || this.x + this.width >= this.canvas.width - 8) {
+      this.direction *= -1;
+      this.x = Math.max(8, Math.min(this.canvas.width - this.width - 8, this.x));
+    }
+    this.pulse += 0.05;
+    if (!this.unlocked || this.defeated) return;
+
+    if (oldPhase !== this.alienPhase) {
+      this.shotTimer = 45;
+      this.alienSpecialCooldown = 95;
+    }
+    this.shotTimer--;
+    if (this.shotTimer <= 0) {
+      this.fireAlienPattern(enemyBullets, player);
+      this.shotTimer = [86, 76, 68][this.alienPhase - 1];
+    }
+
+    if (this.alienWarning > 0) {
+      this.alienWarning--;
+      if (this.alienWarning === 0) {
+        this.fireAlienSpecial(enemyBullets);
+        this.alienSpecialActive = 22;
+        this.alienSpecialCooldown = [270, 235, 205][this.alienPhase - 1];
+      }
+    } else if (this.alienSpecialCooldown > 0) {
+      this.alienSpecialCooldown--;
+    } else {
+      this.startAlienSpecial(player);
+    }
+    if (this.alienSpecialActive > 0) this.alienSpecialActive--;
+  }
+
+  fireAlienPattern(enemyBullets, player) {
+    const cx = this.x + this.width / 2;
+    const y = this.y + this.height - 5;
+
+    if (this.alienPhase === 1) {
+      // Leque de gosma: inspirado diretamente no quadro de conceito.
+      for (let i = -2; i <= 2; i++) {
+        enemyBullets.push({ x: cx, y, vx: i * 0.58, vy: 3.0, radius: 7, damage: 1, kind: "slime" });
+      }
+      return;
+    }
+
+    if (this.alienPhase === 2) {
+      const mode = this.alienAttackIndex++ % 3;
+      if (mode === 0) {
+        // Gosma em linha.
+        [-0.75, 0, 0.75].forEach(vx => enemyBullets.push({ x: cx, y, vx, vy: 3.1, radius: 7, damage: 1, kind: "slime" }));
+      } else if (mode === 1) {
+        // Disparos circulares: oito projéteis abrindo ao redor do Boss.
+        for (let i = 0; i < 8; i++) {
+          const a = Math.PI * 0.12 + (Math.PI * 0.76 * i / 7);
+          enemyBullets.push({ x: cx, y, vx: Math.cos(a) * 2.15, vy: Math.sin(a) * 2.15 + 1.25, radius: 6, damage: 1, kind: "slime" });
+        }
+      } else {
+        this.fireAlienTarget(enemyBullets, player, 3.2, "slime");
+      }
+      return;
+    }
+
+    // Fase 3: chuva de gosma com corredores + tiro direcionado.
+    const offsets = [-3,-2,-1,0,1,2,3];
+    const shift = this.alienAttackIndex++ % 2 ? 0.45 : -0.45;
+    offsets.forEach(i => enemyBullets.push({ x: cx + i * 22, y, vx: i * 0.16 + shift, vy: 3.0, radius: 6, damage: 1, kind: "slime" }));
+    this.fireAlienTarget(enemyBullets, player, 3.3, "slime");
+  }
+
+  fireAlienTarget(enemyBullets, player, speed, kind) {
+    const cx = this.x + this.width / 2, y = this.y + this.height;
+    const tx = player ? player.x + player.width/2 : this.canvas.width/2;
+    const ty = player ? player.y + player.height/2 : this.canvas.height;
+    const dx=tx-cx, dy=Math.max(1,ty-y), len=Math.hypot(dx,dy)||1;
+    enemyBullets.push({x:cx,y,vx:dx/len*speed,vy:dy/len*speed,radius:7,damage:1,kind});
+  }
+
+  startAlienSpecial(player) {
+    const playerCenter = player ? player.x + player.width / 2 : this.canvas.width / 2;
+    let x = 58 + Math.random() * (this.canvas.width - 116);
+    if (Math.abs(x - playerCenter) < 72) x += x < this.canvas.width / 2 ? 110 : -110;
+    this.alienSpecialX = Math.max(42, Math.min(this.canvas.width - 42, x));
+    this.alienWarning = this.alienPhase === 3 ? 72 : 82;
+  }
+
+  fireAlienSpecial(enemyBullets) {
+    const count = this.alienPhase === 3 ? 11 : 7;
+    const spread = this.alienPhase === 3 ? 125 : 90;
+    for (let i = 0; i < count; i++) {
+      const x = this.alienSpecialX + (Math.random() - 0.5) * spread;
+      enemyBullets.push({
+        x: Math.max(10, Math.min(this.canvas.width - 10, x)),
+        y: 80 + Math.random() * 35,
+        vx: (Math.random() - 0.5) * 0.45,
+        vy: this.alienPhase === 3 ? 3.0 + Math.random() * 0.65 : 2.7 + Math.random() * 0.45,
+        radius: this.alienPhase === 3 ? 7 : 8,
+        damage: 1,
+        kind: "slimeRain"
+      });
+    }
+  }
+
+  drawAlienSupremo(ctx) {
+    const phase = this.alienPhase;
+    const sprite = bossSprites[`ALIEN_PHASE${phase}`];
+    const pulse = 1 + Math.sin(this.pulse) * 0.025;
+    ctx.save();
+    ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+    ctx.scale(pulse, pulse);
+    if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+      ctx.shadowBlur = 28;
+      ctx.shadowColor = phase === 1 ? "#4dff72" : phase === 2 ? "#b66cff" : "#ff4f79";
+
+      // As três artes possuem proporções ligeiramente diferentes.
+      // Ajustamos dentro da mesma área sem esticar nem cortar nenhuma parte.
+      const boxW = this.width;
+      const boxH = this.height;
+      const scale = Math.min(boxW / sprite.naturalWidth, boxH / sprite.naturalHeight);
+      const drawW = sprite.naturalWidth * scale;
+      const drawH = sprite.naturalHeight * scale;
+      ctx.drawImage(sprite, -drawW / 2, -drawH / 2, drawW, drawH);
+    }
+    ctx.restore();
+
+    // Indicador da fase atual do Boss.
+    const label = phase === 1 ? "FASE 1 • GOSMA EM LEQUE" : phase === 2 ? "FASE 2 • ATAQUE CIRCULAR" : "FASE 3 • CHUVA DE GOSMA";
+    ctx.save();
+    ctx.font = "bold 10px Arial";
+    ctx.textAlign = "center";
+    ctx.fillStyle = phase === 1 ? "#8dff9a" : phase === 2 ? "#d6b0ff" : "#ff9bb4";
+    ctx.fillText(label, this.x + this.width / 2, this.y + this.height + 15);
+    ctx.restore();
+
+    if (this.alienWarning > 0) {
+      const x = this.alienSpecialX;
+      const w = this.alienPhase === 3 ? 72 : 48;
+      ctx.save();
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = "#64ff7b";
+      ctx.fillRect(x - w / 2, 0, w, this.canvas.height);
+      ctx.globalAlpha = 0.95;
+      ctx.strokeStyle = "#a7ffb2";
+      ctx.setLineDash([7, 7]);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - w / 2, 80, w, this.canvas.height - 100);
+      ctx.setLineDash([]);
+      ctx.font = "bold 12px Arial";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#d8ffdc";
+      ctx.fillText("⚠ CHUVA DE GOSMA", x, 445);
+      ctx.restore();
+    }
+    if (this.alienSpecialActive > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.82;
+      ctx.fillStyle = "rgba(76,255,114,.28)";
+      ctx.fillRect(this.alienSpecialX - 34, 75, 68, this.canvas.height - 75);
+      ctx.restore();
+    }
+  }
+
+  updateFinalBoss(frame, enemyBullets, player) {
+    const ratio = this.hp / this.maxHp;
+    const oldPhase = this.finalPhase;
+    if (ratio > 2 / 3) this.finalPhase = 1;
+    else if (ratio > 1 / 3) this.finalPhase = 2;
+    else this.finalPhase = 3;
+
+    // O movimento acelera conforme a vida diminui.
+    const phaseSpeed = [1.05, 1.40, 1.75][this.finalPhase - 1];
+    this.x += phaseSpeed * this.direction;
+    if (this.x <= 12 || this.x + this.width >= this.canvas.width - 12) {
+      this.direction *= -1;
+      this.x = Math.max(12, Math.min(this.canvas.width - this.width - 12, this.x));
+    }
+
+    if (!this.unlocked || this.defeated) return;
+
+    // Quando muda de fase, o Boss faz uma pequena pausa de ataque para o
+    // jogador perceber visualmente que o padrão ficou mais agressivo.
+    if (oldPhase !== this.finalPhase) {
+      this.shotTimer = 34;
+      this.specialCooldown = Math.min(this.specialCooldown, 85);
+    }
+
+    this.shotTimer--;
+    if (this.shotTimer <= 0) {
+      this.fireFinalPattern(enemyBullets, player);
+      this.shotTimer = [72, 62, 48][this.finalPhase - 1];
+    }
+
+    // Ataque especial: aviso -> carregamento -> raio vertical.
+    if (this.specialWarning > 0) {
+      this.specialWarning--;
+      if (this.specialWarning === 0) {
+        this.fireSpecialBeam(enemyBullets);
+        this.specialActive = 18;
+        this.specialCooldown = [260, 230, 200][this.finalPhase - 1];
+      }
+    } else if (this.specialCooldown > 0) {
+      this.specialCooldown--;
+    } else {
+      this.startSpecialWarning(player);
+    }
+
+    if (this.specialActive > 0) this.specialActive--;
+  }
+
+  startSpecialWarning(player) {
+    const playerCenter = player ? player.x + player.width / 2 : this.canvas.width / 2;
+    let x = 38 + Math.random() * (this.canvas.width - 76);
+    // Evita escolher exatamente a posição da nave para que o ataque continue
+    // sendo um teste de reação, não uma colisão inevitável.
+    if (Math.abs(x - playerCenter) < 55) {
+      x += x < this.canvas.width / 2 ? 90 : -90;
+      x = Math.max(28, Math.min(this.canvas.width - 28, x));
+    }
+    this.specialX = x;
+    this.specialWarning = this.finalPhase === 3 ? 52 : 60;
+  }
+
+  fireSpecialBeam(enemyBullets) {
+    const width = this.finalPhase === 3 ? 38 : 30;
+    enemyBullets.push({
+      kind: "beam",
+      x: this.specialX,
+      y: 0,
+      width,
+      height: this.canvas.height,
+      ttl: this.finalPhase === 3 ? 16 : 13,
+      damage: 1
+    });
+  }
+
+  fireFinalPattern(enemyBullets, player) {
+    const cx = this.x + this.width / 2;
+    const y = this.y + this.height - 4;
+    const targetX = player ? player.x + player.width / 2 : this.canvas.width / 2;
+
+    if (this.finalPhase === 1) {
+      // Fase 1: tiros controlados e direcionados.
+      const dx = targetX - cx;
+      const vy = 3.2;
+      const vx = Math.max(-2.2, Math.min(2.2, dx / 120));
+      enemyBullets.push({ x: cx, y, vx, vy, radius: 7, damage: 1, kind: "energy" });
+      return;
+    }
+
+    if (this.finalPhase === 2) {
+      // Fase 2: leque de 5 projéteis.
+      for (let i = -2; i <= 2; i++) {
+        enemyBullets.push({
+          x: cx, y,
+          vx: i * 0.70,
+          vy: 3.05 - Math.abs(i) * 0.05,
+          radius: 6,
+          damage: 1,
+          kind: "energy"
+        });
+      }
+      // A cada duas rajadas, acrescenta um tiro mirando a nave.
+      if (this.attackIndex++ % 2 === 0) this.fireTargeted(enemyBullets, player, 3.5);
+      return;
+    }
+
+    // Fase 3: rajadas rápidas, leque maior + tiro direcionado.
+    for (let i = -3; i <= 3; i++) {
+      enemyBullets.push({
+        x: cx, y,
+        vx: i * 0.62,
+        vy: 3.35 - Math.abs(i) * 0.04,
+        radius: 5.5,
+        damage: 1,
+        kind: "energy"
+      });
+    }
+    this.fireTargeted(enemyBullets, player, 3.8);
+  }
+
+  fireTargeted(enemyBullets, player, speed) {
+    const cx = this.x + this.width / 2;
+    const y = this.y + this.height;
+    const tx = player ? player.x + player.width / 2 : this.canvas.width / 2;
+    const ty = player ? player.y + player.height / 2 : this.canvas.height;
+    const dx = tx - cx;
+    const dy = Math.max(1, ty - y);
+    const length = Math.hypot(dx, dy) || 1;
+    enemyBullets.push({
+      x: cx, y,
+      vx: dx / length * speed,
+      vy: dy / length * speed,
+      radius: 6,
+      damage: 1,
+      kind: "energy"
+    });
+  }
+
+  firePattern(enemyBullets, player) {
+    const cx = this.x + this.width / 2;
+    const y = this.y + this.height;
+
+    if (this.type === "MINI_BOSS") {
+      // Primeiro Boss: padrão original de três orbes.
+      enemyBullets.push({ x: cx - 5, y, vx: 0, vy: 4.2, radius: 6, damage: 1, kind: "orb" });
+      if (this.patternTimer % 2 === 0) {
+        enemyBullets.push({ x: cx, y, vx: -1.1, vy: 3.8, radius: 5, damage: 1, kind: "orb" });
+        enemyBullets.push({ x: cx, y, vx: 1.1, vy: 3.8, radius: 5, damage: 1, kind: "orb" });
+      }
+      return;
+    }
+
+    // Segundo Boss: recuperar o padrão original da versão V7.
+    // Alterna entre uma rajada de 3 tiros e um leque de 7.
+    // A velocidade foi mantida moderada para preservar a jogabilidade.
+    if (this.patternTimer % 3 !== 0) {
+      enemyBullets.push({
+        x: cx - 6, y, vx: 0, vy: 4.6, radius: 7, damage: 1, kind: "energy"
+      });
+      enemyBullets.push({
+        x: cx - 6, y, vx: -1.6, vy: 4.2, radius: 6, damage: 1, kind: "energy"
+      });
+      enemyBullets.push({
+        x: cx - 6, y, vx: 1.6, vy: 4.2, radius: 6, damage: 1, kind: "energy"
+      });
+    } else {
+      for (let i = -3; i <= 3; i++) {
+        enemyBullets.push({
+          x: cx, y,
+          vx: i * 0.75,
+          vy: 3.9,
+          radius: 5,
+          damage: 1,
+          kind: "energy"
+        });
+      }
+    }
+  }
+
+  takeDamage(damage) {
+    if (!this.unlocked || this.defeated) return false;
+    this.hp = Math.max(0, this.hp - damage);
+    this.flash = 5;
+    if (this.hp <= 0) {
+      this.defeated = true;
+      this.specialWarning = 0;
+      this.specialActive = 0;
+      return true;
+    }
+    return false;
+  }
+
+  draw(ctx) {
+    if (this.defeated) return;
+    if (this.flash > 0) this.flash--;
+
+    if (this.type === "BOSS_FINAL") {
+      this.drawFinalBoss(ctx);
+    } else if (this.type === "ALIEN_SUPREMO") {
+      this.drawAlienSupremo(ctx);
+    } else {
+      const sprite = bossSprites[this.type];
+      if (sprite && sprite.complete) {
+        ctx.save();
+        ctx.globalAlpha = this.unlocked ? 1 : 0.5;
+        ctx.drawImage(sprite, this.x - 12, this.y - 8, this.width + 24, this.height + 16);
+        ctx.restore();
+      }
+    }
+
+    drawBossHealthBar(ctx, this);
+  }
+
+  drawFinalBoss(ctx) {
+    const ratio = this.hp / this.maxHp;
+    const phase = ratio > 2 / 3 ? 1 : ratio > 1 / 3 ? 2 : 3;
+    const cx = this.x + this.width / 2;
+    const cy = this.y + this.height / 2;
+    const pulse = 1 + Math.sin(this.pulse) * 0.08;
+
+    // Ataque especial: zona de perigo aparece antes do raio.
+    if (this.specialWarning > 0) {
+      const progress = 1 - this.specialWarning / (phase === 3 ? 42 : 52);
+      ctx.save();
+      ctx.globalAlpha = 0.14 + progress * 0.22;
+      ctx.fillStyle = "#ff2df7";
+      ctx.fillRect(this.specialX - 17, 0, 34, this.canvas.height);
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = "#ffb7ff";
+      ctx.lineWidth = 2 + progress * 3;
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath();
+      ctx.moveTo(this.specialX, 0);
+      ctx.lineTo(this.specialX, this.canvas.height);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = "bold 11px Arial";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#ffd8ff";
+      ctx.fillText("⚠ RAIO DE ENERGIA", this.specialX, Math.min(this.canvas.height - 14, 455));
+      ctx.restore();
+    }
+
+    // O raio ativo permanece visível por alguns frames.
+    if (this.specialActive > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.78;
+      const grad = ctx.createLinearGradient(this.specialX - 28, 0, this.specialX + 28, 0);
+      grad.addColorStop(0, "rgba(255,0,255,0)");
+      grad.addColorStop(.5, "rgba(255,190,255,.95)");
+      grad.addColorStop(1, "rgba(255,0,255,0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(this.specialX - 30, 0, 60, this.canvas.height);
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    const phaseColor = phase === 1 ? "#6cf6ff" : phase === 2 ? "#b46cff" : "#ff3df2";
+    const secondary = phase === 1 ? "#2d7cff" : phase === 2 ? "#7b2cff" : "#ff174f";
+
+    // Aura e anéis orbitais dão ao Boss uma silhueta diferente dos anteriores.
+    ctx.globalAlpha = .22;
+    ctx.shadowBlur = 35;
+    ctx.shadowColor = phaseColor;
+    ctx.strokeStyle = phaseColor;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 68 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = .6;
+    ctx.lineWidth = 2;
+    ctx.rotate(this.pulse * .45);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 102, 31, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.rotate(-this.pulse * .9);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 92, 25, Math.PI / 2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Corpo alienígena/tecnológico.
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 22;
+    ctx.shadowColor = phaseColor;
+    ctx.fillStyle = "rgba(7,10,30,.94)";
+    ctx.strokeStyle = phaseColor;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-92, 17);
+    ctx.lineTo(-68, -31);
+    ctx.lineTo(-28, -48);
+    ctx.lineTo(0, -60);
+    ctx.lineTo(28, -48);
+    ctx.lineTo(68, -31);
+    ctx.lineTo(92, 17);
+    ctx.lineTo(53, 35);
+    ctx.lineTo(0, 46);
+    ctx.lineTo(-53, 35);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Asas/módulos laterais.
+    ctx.fillStyle = secondary;
+    ctx.globalAlpha = .8;
+    ctx.beginPath();
+    ctx.moveTo(-68, -20); ctx.lineTo(-112, -2); ctx.lineTo(-88, 25); ctx.lineTo(-55, 14); ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(68, -20); ctx.lineTo(112, -2); ctx.lineTo(88, 25); ctx.lineTo(55, 14); ctx.closePath(); ctx.fill();
+
+    // Núcleo pulsante.
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 32;
+    ctx.shadowColor = phaseColor;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(0, 0, 22 * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = phaseColor;
+    ctx.beginPath(); ctx.arc(0, 0, 15 * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#16001b";
+    ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI * 2); ctx.fill();
+
+    // Pequenas luzes laterais animadas.
+    ctx.fillStyle = "#fff";
+    for (let i = -2; i <= 2; i++) {
+      const xx = i * 30;
+      ctx.globalAlpha = .45 + .45 * Math.sin(this.pulse * 2 + i);
+      ctx.beginPath(); ctx.arc(xx, 30, 2.2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+
+    // Texto da fase do Boss muda conforme a vida cai.
+    ctx.save();
+    ctx.font = "bold 10px Arial";
+    ctx.textAlign = "center";
+    ctx.fillStyle = phaseColor;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = phaseColor;
+    ctx.fillText(`PROTOCOLO DE COMBATE ${phase}`, cx, this.y + this.height + 15);
+    ctx.restore();
+  }
+
+  getBounds() {
+    return {
+      x: this.x + 10,
+      y: this.y + 7,
+      width: this.width - 20,
+      height: this.height - 12
+    };
+  }
+}
+
+function drawBossHealthBar(ctx, boss) {
+  const barWidth = Math.min(520, boss.canvas.width * .72);
+  const barHeight = 14;
+  const x = (boss.canvas.width - barWidth) / 2;
+  const y = 22;
+  const ratio = Math.max(0, boss.hp / boss.maxHp);
+
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,.78)";
+  ctx.fillRect(x, y, barWidth, barHeight);
+  ctx.strokeStyle = "#eaf6ff";
+  ctx.strokeRect(x, y, barWidth, barHeight);
+  ctx.fillStyle = boss.type === "MINI_BOSS" ? "#ff5577" : (boss.type === "BOSS_FINAL" ? (ratio > 2/3 ? "#6cf6ff" : ratio > 1/3 ? "#b46cff" : "#ff3df2") : "#d26cff");
+  ctx.fillRect(x + 2, y + 2, (barWidth - 4) * ratio, barHeight - 4);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 12px Arial";
+  ctx.textAlign = "center";
+  const label = boss.type === "MINI_BOSS" ? "MINI BOSS" : boss.type === "BOSS_FINAL" ? "BOSS FINAL" : "BOSS";
+  ctx.fillText(`VIDA DO ${label}: ${Math.max(0, boss.hp)}/${boss.maxHp}`, boss.canvas.width / 2, y - 5);
+  ctx.restore();
+}

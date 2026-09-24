@@ -1,0 +1,320 @@
+const enemySprites = {
+  NORMAL: new Image(),
+  MINI_TANK: new Image(),
+  TANK: new Image(),
+  RAPIDO: new Image(),
+  ELITE: new Image(),
+  ALIEN_GOSMA: new Image()
+};
+enemySprites.NORMAL.src = "assets/sprites/enemy-normal.png";
+enemySprites.MINI_TANK.src = "assets/sprites/enemy-mini-tank.png";
+enemySprites.TANK.src = "assets/sprites/enemy-tank.png";
+enemySprites.RAPIDO.src = "assets/sprites/enemy-rapido.png";
+enemySprites.ELITE.src = "assets/sprites/enemy-elite.svg";
+enemySprites.ALIEN_GOSMA.src = "assets/sprites/enemy-alien-gosma.png";
+
+/* enemies.js
+   Sistema compartilhado dos inimigos.
+
+   A ideia visual/movimentação dos inimigos que descem foi inspirada
+   no "joguinho" enviado: eles nascem acima do Canvas, em posições
+   horizontais variadas, e entram na tela descendo.
+
+   As vidas/pontos continuam seguindo o Prompt-Base do SPACE SHOOTER.
+*/
+
+const EnemyTypes = {
+  NORMAL: {
+    hp: 1,
+    speed: 1.8,
+    points: 10,
+    width: 40,
+    height: 40
+  },
+
+  MINI_TANK: {
+    hp: 2,
+    speed: 1.45,
+    points: 20,
+    width: 60,
+    height: 40
+  },
+
+  TANK: {
+    hp: 4,
+    speed: 1.05,
+    points: 40,
+    width: 72,
+    height: 38
+  },
+
+  RAPIDO: {
+    hp: 1,
+    speed: 3.7,
+    points: 15,
+    width: 66,
+    height: 32
+  },
+
+  ELITE: {
+    hp: 3,
+    speed: 1.7,
+    points: 60,
+    width: 52,
+    height: 42
+  },
+
+  ALIEN_GOSMA: {
+    hp: 2,
+    speed: 1.55,
+    points: 50,
+    width: 44,
+    height: 44
+  }
+};
+
+class Enemy {
+  constructor(type, x, y, options = {}) {
+    const base = EnemyTypes[type];
+
+    this.type = type;
+    this.maxHp = base.hp;
+    this.hp = base.hp;
+    this.speed = options.speed ?? base.speed;
+    this.points = base.points;
+
+    this.width = base.width;
+    this.height = base.height;
+
+    this.x = x;
+    this.y = y;
+
+    this.direction = options.direction ?? 1;
+    this.horizontalOnly = Boolean(options.horizontalOnly);
+    this.descend = Boolean(options.descend);
+
+    this.flash = 0;
+    this.phase = Math.random() * Math.PI * 2;
+
+    // Controle usado quando um inimigo atravessa a tela.
+    this.escaped = false;
+    this.active = options.active ?? true;
+    this.spawnAt = options.spawnAt ?? 0;
+    this.shotCooldown = options.shotCooldown ?? 95;
+  }
+
+  takeDamage(damage = 1) {
+    this.hp -= damage;
+    this.flash = 5;
+    return this.hp <= 0;
+  }
+
+  /*
+    Nas fases 1, 2, 3 e 5:
+    comportamento parecido com o joguinho enviado.
+    O inimigo entra pelo topo e desce.
+  */
+  update(frame, canvas) {
+    if (!this.active) return;
+
+    if (this.descend) {
+      this.y += this.speed;
+
+      /*
+        Pequeno movimento lateral para não deixar a descida
+        totalmente parada, mantendo o estilo arcade.
+      */
+      this.x += Math.sin((frame + this.phase * 100) * 0.025) * 0.45;
+
+      this.x = Math.max(
+        0,
+        Math.min(canvas.width - this.width, this.x)
+      );
+
+      return;
+    }
+
+    // ELITE: desce com pequenas oscilações laterais, dificultando a mira.
+    if (this.type === "ELITE") {
+      this.y += this.speed;
+      this.x += Math.sin((frame + this.phase * 100) * 0.055) * 1.25;
+      this.x = Math.max(0, Math.min(canvas.width - this.width, this.x));
+      return;
+    }
+
+    /*
+      Fases de Mini Boss/Boss:
+      os inimigos permanecem na parte superior.
+    */
+    if (this.horizontalOnly) {
+      this.x += this.speed * this.direction;
+
+      if (
+        this.x <= 8 ||
+        this.x + this.width >= canvas.width - 8
+      ) {
+        this.direction *= -1;
+
+        this.x = Math.max(
+          8,
+          Math.min(canvas.width - this.width - 8, this.x)
+        );
+      }
+
+      this.y += Math.sin(this.phase) * 0.12;
+
+      this.y = Math.max(
+        55,
+        Math.min(canvas.height * 0.42, this.y)
+      );
+
+      return;
+    }
+
+    // Movimento horizontal padrão quando a fase assim determinar.
+    this.x += this.speed * this.direction;
+
+    if (
+      this.x <= 8 ||
+      this.x + this.width >= canvas.width - 8
+    ) {
+      this.direction *= -1;
+    }
+  }
+
+  draw(ctx) {
+    if (!this.active) return;
+    if (this.flash > 0) this.flash--;
+
+    const sprite = enemySprites[this.type];
+    if (this.type === "ALIEN_GOSMA") {
+      if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+        ctx.save();
+        ctx.globalAlpha = this.flash ? 0.75 : 1;
+        ctx.shadowBlur = 18; ctx.shadowColor = "#53ff75";
+        ctx.drawImage(sprite, this.x - 7, this.y - 7, this.width + 14, this.height + 14);
+        ctx.restore();
+      } else { this.drawAlienGosma(ctx); }
+    } else if (sprite && sprite.complete) {
+      ctx.save();
+      ctx.globalAlpha = this.flash ? 0.75 : 1;
+      ctx.drawImage(sprite, this.x - 5, this.y - 6, this.width + 10, this.height + 12);
+      ctx.restore();
+    }
+
+    if (this.maxHp > 1) {
+      const ratio = Math.max(0, this.hp / this.maxHp);
+      ctx.fillStyle = "rgba(0, 0, 0, .72)";
+      ctx.fillRect(this.x, this.y - 9, this.width, 4);
+      ctx.fillStyle = "#ffcf55";
+      ctx.fillRect(this.x, this.y - 9, this.width * ratio, 4);
+    }
+  }
+
+  drawAlienGosma(ctx) {
+    const cx = this.x + this.width / 2;
+    const cy = this.y + this.height / 2;
+    const pulse = 1 + Math.sin(this.phase + performance.now() * 0.006) * 0.06;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(pulse, pulse);
+    ctx.shadowBlur = 14;
+    ctx.shadowColor = "#63ff78";
+    ctx.fillStyle = "#d8f7d7";
+    ctx.strokeStyle = "#52ff70";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0,-20); ctx.lineTo(17,-8); ctx.lineTo(20,8); ctx.lineTo(8,20);
+    ctx.lineTo(-8,20); ctx.lineTo(-20,8); ctx.lineTo(-17,-8); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#07140a";
+    ctx.beginPath(); ctx.ellipse(-8,-3,5,9,0,0,Math.PI*2); ctx.ellipse(8,-3,5,9,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#8dff92";
+    ctx.beginPath(); ctx.arc(0,7,7,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#142014";
+    ctx.beginPath(); ctx.arc(0,7,3,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  getBounds() {
+    if (!this.active) return { x: -9999, y: -9999, width: 0, height: 0 };
+    return {
+      x: this.x + 4,
+      y: this.y + 4,
+      width: this.width - 8,
+      height: this.height - 8
+    };
+  }
+}
+
+/*
+  Formação tradicional para as fases 4 e 6.
+  Os inimigos ficam organizados na região superior.
+*/
+function createEnemyFormation(list, type, count, options = {}) {
+  const cols = options.cols || Math.min(count, 6);
+  const width = EnemyTypes[type].width;
+  const gapX = options.gapX ?? 24;
+  const gapY = options.gapY ?? 48;
+  const totalWidth = cols * width + (cols - 1) * gapX;
+  const canvasWidth = options.canvasWidth ?? 500;
+  const startX = (canvasWidth - totalWidth) / 2;
+  const startY = options.startY ?? 70;
+
+  for (let i = 0; i < count; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+
+    list.push(
+      new Enemy(
+        type,
+        startX + col * (width + gapX),
+        startY + row * gapY,
+        options
+      )
+    );
+  }
+}
+
+/*
+  Cria inimigos como no joguinho enviado:
+  cada inimigo nasce acima da tela e entra individualmente.
+*/
+function createDescendingEnemies(list, type, count, options = {}) {
+  const canvasWidth = options.canvasWidth ?? 500;
+  const intervalFrames = options.intervalFrames ?? 60;
+  const width = EnemyTypes[type].width;
+
+  for (let i = 0; i < count; i++) {
+    const x = Math.random() * Math.max(1, canvasWidth - width);
+    list.push(new Enemy(type, x, -EnemyTypes[type].height - 24, {
+      ...options,
+      descend: true,
+      active: false,
+      spawnAt: i * intervalFrames
+    }));
+  }
+}
+
+function createRandomDescendingEnemies(list, types, options = {}) {
+  const order = [...types];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+
+  const canvasWidth = options.canvasWidth ?? 500;
+  const intervalFrames = options.intervalFrames ?? 60;
+  const spawnPerInterval = Math.max(1, options.spawnPerInterval ?? 1);
+
+  order.forEach((type, i) => {
+    const width = EnemyTypes[type].width;
+    const x = Math.random() * Math.max(1, canvasWidth - width);
+    list.push(new Enemy(type, x, -EnemyTypes[type].height - 24, {
+      ...options,
+      descend: true,
+      active: false,
+      spawnAt: Math.floor(i / spawnPerInterval) * intervalFrames
+    }));
+  });
+}
