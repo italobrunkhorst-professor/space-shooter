@@ -28,8 +28,8 @@ const EnemyTypes = {
     hp: 1,
     speed: 1.8,
     points: 10,
-    width: 48,
-    height: 46
+    width: 70,
+    height: 70
   },
 
   MINI_TANK: {
